@@ -1,6 +1,12 @@
 //model define as funcoes e a logica Esta fica apenas esperando a chamada das funções,[7] que permite o acesso para os dados serem coletados, gravados e, exibidos. model que diz COMO FAZER as coisa (ex CRUD)
 
 const sql = require("./db.js");
+const cacheClient = require("../cache.js");
+
+function cacheKey(postId) {
+  // Standarize a way to convert the id to a cache-key.
+  return "comment-" + postId
+}
 
 // constructor
 const Post = function (post) {
@@ -8,8 +14,6 @@ const Post = function (post) {
   this.text = post.text;
   this.date = post.date;
   this.userId = post.userId;
-
- 
 };
 
 Post.create = (newPost, result) => {
@@ -20,12 +24,26 @@ Post.create = (newPost, result) => {
       return;
     }
 
-    console.log("created post: ", { id: res.insertId, ...newPost });
-    result(null, { id: res.insertId, ...newPost });
+    let id = res.insertId;
+
+    console.log("created post: ", { id: id, ...newPost });
+    result(null, { id: id, ...newPost });
   });
+
+  // Another way to populate the cache is to
+  // add items there while someone insert.
+  // This can be useful for cases where it's
+  // Almost certain that after adding an information
+  // this information will be displayed/used.
+  // Probably the best course of action is to just
+  // keep it in the local memory/cookies instead
+  // of adding some latency by having it on a different
+  // server, but hey
+  cacheClient.setCache(cacheKey(id), newPost)
 };
 
 Post.findById = (id, result) => {
+  
   sql.query(`SELECT * FROM posts WHERE id = ${id}`, (err, res) => {
     if (err) {
       console.log("error: ", err);

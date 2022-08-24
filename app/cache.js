@@ -14,6 +14,10 @@ class RedisLibrary {
     }
 
     clearCache = () => {
+        // Ideally this function would clear all
+        // the items matching a specific key pattern.
+        // For example, if comment.deleteAll is called,
+        // we don't need to clear users cache
         return this.redisClient.flushAll()
     }
 

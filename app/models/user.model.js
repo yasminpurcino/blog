@@ -2,6 +2,11 @@
 
 const sql = require("./db.js");
 
+function cacheKey(userId) {
+  // Standarize a way to convert the id to a cache-key.
+  return "comment-" + userId
+}
+
 // constructor
 const User = function (user) {
   this.name = user.name;

@@ -1,6 +1,12 @@
 //model define as funcoes e a logica Esta fica apenas esperando a chamada das funções,[7] que permite o acesso para os dados serem coletados, gravados e, exibidos. model que diz COMO FAZER as coisa (ex CRUD)
 
 const sql = require("./db.js");
+const cacheClient = require("../cache.js");
+
+function cacheKey(commentId) {
+  // Standarize a way to convert the id to a cache-key.
+  return "comment-" + commentId
+}
 
 // constructor
 const Comment = function (comment) {
@@ -8,8 +14,6 @@ const Comment = function (comment) {
   this.comment = comment.comment;
   this.date = comment.date;
   this.userId = comment.userId;
-
-
 };
 
 Comment.create = (newComment, result) => {
@@ -20,12 +24,28 @@ Comment.create = (newComment, result) => {
       return;
     }
 
-    console.log("created comment: ", { id: res.insertId, ...newComment });
-    result(null, { id: res.insertId, ...newComment });
+    let id = res.insertId;
+
+    console.log("created comment: ", { id: idd, ...newComment });
+    result(null, { id: id, ...newComment });
+
+    // No need to do anything redis here, it will be a cache miss when someone
+    // tries to get a comment that does not exist in redis, and will be added.
+
+    // One could argue that pre-populating the cache could speedup things, but
+    // I prefer only adding things that are used in cache (ex: active requests)
   });
 };
 
 Comment.findById = (id, result) => {
+  // First search in the cache since it's faster
+  var comment = cacheClient.get(cacheKey(id))
+  if (comment != undefined) {
+    // Found in cache, returning it
+    result(null, comment)
+    return
+  }
+  // Couldn't find in cache, let's search in the DB
   sql.query(`SELECT * FROM comments WHERE idcomment = ${id}`, (err, res) => {
     if (err) {
       console.log("error: ", err);
@@ -34,8 +54,11 @@ Comment.findById = (id, result) => {
     }
 
     if (res.length) {
-      console.log("found comment: ", res[0]);
-      result(null, res[0]);
+      let comment = res[0];
+      console.log("found comment: ", comment);
+      // Let's add it to the cache
+      cacheClient.setCache(cacheKey(id), comment)
+      result(null, comment);
       return;
     }
 
@@ -62,26 +85,11 @@ Comment.updateById = (id, comment, result) => {
       }
 
       console.log("updated comment: ", { id: id, ...comment });
+      // There was an update here.  Let's invalidate the cache
+      cacheClient.setCache(cacheKey(id), undefined)
       result(null, { id: id, ...comment });
     }
   );
-};
-
-Comment.findById = (id, result) => {
-  sql.query(`SELECT * FROM comments WHERE idcomment = ${id}`, (err, res) => {
-    if (err) {
-      console.log("error:", err);
-      result(err, null);
-      return;
-    }
-
-    if (res.length) {
-      console.log("found comment:", res[0]);
-      result(null, res[0]);
-      return;
-    }
-    result({ kind: "not_found" }, null)
-  });
 };
 
 Comment.findAll = (comment, result) => {
@@ -120,6 +128,9 @@ Comment.deleteOne = (id, result) => {
 
     if (res) {
       console.log("delete:", res);
+      // Remove from cache to avoid the cache showing
+      // deleted comments.
+      cacheClient.setCache(cacheKey(id), undefined);
       result(null, res);
       return;
     }
@@ -143,6 +154,9 @@ Comment.deleteAll = (comment, result) => {
       return;
     }
     if (res) {
+      // All comments records where deleted.
+      // Let's clear the cache.
+      cacheClient.clearCache();
       result(null, res)
       return;
     }
